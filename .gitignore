@@ -5,10 +5,13 @@
 /vendor.wwebjs_auth
 /vendor
 
-/public/bots/.wwebjs_auth
-/public/bots/.wwebjs_cache
-/public/bots/node_modules
-/public/bots/.env
+/public/serverjs/.wwebjs_auth
+/public/serverjs/.wwebjs_cache
+/public/serverjs/node_modules
+/public/serverjs/.env
+
+package-lock.json
+/public/serverjs/package-lock.json
 
 .env
 .env.backup
