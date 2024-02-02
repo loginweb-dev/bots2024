@@ -1,0 +1,452 @@
+<?php
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Event;
+use App\Events\MiEvent;
+use App\Cliente;
+use App\Grupo;
+use App\Evento;
+use App\Whatsapp;
+use App\Contacto;
+use App\Descarga;
+use App\Plantilla;
+use App\Product;
+use App\Supplier;
+use App\Encuesta;
+use App\EncuestaVoto;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+// use Illuminate\Support\Facades\Auth;
+/*
+|--------------------------------------------------------------------------
+| API Routes
+|--------------------------------------------------------------------------
+|
+| Here is where you can register API routes for your application. These
+| routes are loaded by the RouteServiceProvider within a group which
+| is assigned the "api" middleware group. Enjoy building your API!
+|
+*/
+
+Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
+    return $request->user();
+});
+
+Route::post('/socket/contactos', function (Request $request) {
+	// return $request->avatar;
+	try {		
+		$mifind = Contacto::where('number', $request->number)->where('user_id', $request->user_id)->first();
+		if ($mifind) {			
+			Storage::disk('public')->delete($mifind->avatar);	
+			$mifind->name = $request->midata["name"];
+			$mifind->shortName = $request->midata["shortName"];
+			$mifind->isBusiness = $request->midata["isBusiness"];
+			$mifind->isBlocked = $request->midata["isBlocked"];
+			$mifind->avatar = $request->avatar;
+			$mifind->send = false;
+			$mifind->user_id = $request->user_id;
+			$mifind->save();	
+				
+		}else{
+			$mifind = Contacto::create($request->midata);
+			$mifind->bot = $request->bot;
+			$mifind->_id = $request->_id;
+			$mifind->avatar = $request->avatar;
+			$mifind->send = false;
+			$mifind->user_id = $request->user_id;
+			$mifind->codigo = $request->midata["id"]["_serialized"];
+			$mifind->save();
+		}
+		return $mifind;
+    } catch (Exception $e) {
+		event(new MiEvent([
+			'error' => 'contacto',
+			'message' => $request->all()
+		]));
+    	return $e;
+	}
+});
+
+Route::post('/socket/grupos', function (Request $request) {
+	try {		
+		$mifind = Grupo::where('codigo', $request->codigo)->where('user_id', $request->user_id)->first();
+		if ($mifind) {
+			$mifind->name = $request->name;
+			$mifind->_id = json_encode($request->_id);
+			$mifind->desc = $request->desc;
+			$mifind->isMuted = $request->isMuted;
+			$mifind->groupMetadata = json_encode($request->groupMetadata);
+			$mifind->lastMessage = json_encode($request->lastMessage);
+			$mifind->owner = json_encode($request->owner);
+			$mifind->send = false;
+			$mifind->user_id = $request->user_id;
+			$mifind->bot = $request->bot;
+			$mifind->save();
+		}else{
+			$mifind = Grupo::create([
+				'_id' => json_encode($request->_id),
+				'name' => $request->name,
+				'bot' => $request->bot,
+				'codigo' => $request->codigo,
+				'isReadOnly' => $request->isReadOnly,
+				'isMuted' => $request->isMuted,
+				'groupMetadata' => json_encode($request->groupMetadata),
+				'lastMessage' => json_encode($request->lastMessage),
+				'owner' => json_encode($request->owner),
+				'creation' => $request->creation,
+				'desc' => $request->desc,
+				'send' => false,
+				'user_id' => $request->user_id
+			]);
+		}
+
+
+		// event(new MiEvent([
+		// 	'mensaje'=> "Se agrego o actualizo el grupo ".$request->name.", con el codigo  ".$request->codigo,
+		// 	'bot' => $request->bot,
+		// 	'fwhats' => date('Y-m-d H:i:s'),
+		// 	'tipo' => $request->tipo
+		// ]));
+
+		return response()->json([
+			'message' => 'Grupo ingresado: '.$request->name
+		]);;
+	} catch (Exception $e) {
+		event(new MiEvent([
+			'error' => 'grupo'
+		]));
+    	return response()->json([
+			'error' => 'grupo'
+		]);;
+	}
+
+});
+
+// Route::post('/socket/grupo/update', function (Request $request) {
+// 	$midata = Grupo::where('codigo', $request->codigo)->where('slug', $request->bot)->first();
+// 	$midata->send = true;
+// 	$midata->save();
+// 	// sleep($request->segundos);
+// 	return true;
+// });
+
+Route::post('/socket/encuesta', function (Request $request) {
+	// return $request->avatar;
+	try {		
+		$mifind = Encuesta::where('pollName', $request->pollName)->first();
+		if ($mifind) {			
+			$mifind->voter = $request->voter;
+			$mifind->save();
+
+			$mivoto = EncuestaVoto::where('voter', $request->voter)->first();
+			if ($mivoto) {
+				$mivoto->selectedOptions = json_encode($request->selectedOptions);
+				$mivoto->save();
+			} else {						
+				EncuestaVoto::create([
+					'selectedOptions' => json_encode($request->selectedOptions),
+					'voter' => $request->voter,
+					'encuesta_id' => $mifind->id
+				]);
+			}
+		}else{
+			$mifind = Encuesta::create([
+				'interractedAtTs' => $request->interractedAtTs,
+				'isSentCagPollCreation' => $request->isSentCagPollCreation,
+				'allowMultipleAnswers' => $request->allowMultipleAnswers,
+
+				'selectedOptions' => json_encode($request->selectedOptions),				
+				'messageSecret' => json_encode($request->messageSecret),
+				'pollInvalidated' => $request->pollInvalidated,
+				'pollOptions' => json_encode($request->pollOptions),
+				'voter' => $request->voter,
+				'pollName' => $request->pollName				
+			]);
+			EncuestaVoto::create([
+				'selectedOptions' => json_encode($request->selectedOptions),
+				'voter' => $request->voter,
+				'encuesta_id' => $mifind->id
+			]);
+		}
+		return $mifind;
+    } catch (Exception $e) {
+		event(new MiEvent([
+			'error' => 'encuesta',
+			'message' => $request->all()
+		]));
+    	return $e;
+	}
+});
+
+Route::post('/socket/evento', function (Request $request) {	
+	$mibot = Whatsapp::where('codigo', $request->bot)->first();
+	try {
+		if (($request->tipo != 'qr') && ($request->tipo != 'ready') && ($request->tipo != 'authenticated') && ($request->tipo != 'init') && ($request->tipo != 'status') && ($request->tipo != 'destroy')) {
+			$mienveto = Evento::create([
+				'clase' => $request->clase,
+				'mensaje'=> $request->mensaje,
+				'tipo' => $request->tipo,
+				'datos' => json_encode($request->datos),
+				'bot' => $request->bot,
+				'desde' => $request->desde,
+				'file' => $request->file,
+				'extension' => $request->extension,
+				'subtipo' => $request->subtipo,
+				'author' => $request->author,
+				'subtype' => $request->subtype,
+				'whatsapp'=> $request->whatsapp,
+				'user_id'=> $mibot->user_id,
+				'grupo'=> $request->grupo
+			]);		
+
+
+			if ($mibot->default) {
+				$midata = Evento::where('id', $mienveto->id)->with('grupo', 'contacto', 'miauthor', 'miwhats')->first();
+				event(new MiEvent($midata));
+			}
+						
+		}else{
+			if ($mibot->default) {
+				event(new MiEvent([
+					'clase' => $request->clase,
+					'bot' => $request->bot,
+					'desde' => $request->desde,
+					'mensaje' => $request->mensaje,
+					'fwhats' => date('Y-m-d H:i:s'),
+					'tipo' => $request->tipo,
+					'file' => $request->file,
+					'extension' => $request->extension,
+					'subtipo' => $request->subtipo,
+					'author' => $request->author,
+					'subtype' => $request->subtype,
+					'datos' => json_encode($request->datos),
+					'whatsapp'=> $request->whatsapp,
+					'user_id'=> $mibot->user_id,
+					'grupo'=> $request->grupo
+				]));	
+			}	
+		}
+		
+		return true;
+	} catch (Exception $e) {
+		event(new MiEvent([
+			'error' => $e
+		]));
+		return $e;
+	}
+});
+
+Route::post('/socket/reset', function (Request $request) {
+	$miwhats = Whatsapp::query()->update([
+		'estado' => false
+	]);
+	return true;
+});
+
+Route::post('/socket/qr', function (Request $request) {
+	event(new MiEvent($request->all()));
+	$miwhats = Whatsapp::where('codigo', $request->whatsapp)->first();
+	return true;
+});
+
+Route::post('/socket/estado', function (Request $request) {
+	// event(new MiEvent($request->all()));
+
+	$miwhats = Whatsapp::where('codigo', $request->bot)->first();
+	if ($miwhats) {
+		$miwhats->estado = $request->estado;
+		$miwhats->save();
+	}
+	return true;
+});
+
+Route::post('/socket/chats', function (Request $request) {
+	event(new MiEvent($request->all()));
+	$miwhats = Whatsapp::where('codigo', $request->whatsapp)->first();
+	if ($miwhats) {
+		$miwhats->chats = json_encode($request->chats);
+		$miwhats->save();
+	}
+	return true;
+});
+
+Route::post('/socket/contacts', function (Request $request) {
+	event(new MiEvent($request->all()));
+	$miwhats = Whatsapp::where('codigo', $request->whatsapp)->first();
+	if ($miwhats) {
+		$miwhats->contactos = json_encode($request->contacts);
+		$miwhats->save();
+	}
+	return true;
+});
+
+
+
+
+// Route::post('/cliente/find', function (Request $request) {
+// 	return Cliente::where("whatsapp", $request->whatsapp)->first();
+// });
+
+// Route::post('/grupo/find', function (Request $request) {
+// 	return Grupo::where("codigo", $request->codigo)->first();
+// });
+
+Route::post('/whatsapp/listar', function (Request $request) {
+	return Evento::where('bot', $request->bot)
+	// ->where('created_at', '>=', date('Y-m-d'))
+	->orderBy('created_at', 'desc')
+	->with('contacto', 'grupo', 'miauthor')
+	->take(30)
+	->get();
+});
+
+Route::post('/whatsapp/chats', function (Request $request) {
+	return Evento::where("bot", $request->codigo)
+	// ->where('created_at', '>=', date('Y-m-d'))
+	->orderBy('created_at', 'desc')
+	->with('contacto', 'grupo', 'miauthor')
+	->take(300)
+	->get();
+});
+
+Route::post('/whatsapp/estados', function (Request $request) {
+	return Evento::where("bot", $request->codigo)
+		// ->where('created_at', '>=', date('Y-m-d'))
+		->where('subtipo', 'status')
+		->orderBy('created_at', 'desc')
+		->with('contacto', 'grupo', 'miauthor')
+		->take(300)
+		->get();
+});
+
+Route::post('/whatsapp/joinleave', function (Request $request) {
+	return Evento::where('bot', $request->codigo)
+	->where('tipo', 'join')->orWhere('tipo', 'leave')
+	// ->where('created_at', '>=', date('Y-m-d'))
+	->orderBy('created_at', 'desc')
+	->with('contacto', 'grupo', 'miauthor')
+	->take(300)
+	->get();
+});
+
+Route::post('/whatsapp/private', function (Request $request) {
+	return Evento::where('bot', $request->codigo)
+	->where('tipo', 'chat_private')->orWhere('subtipo', 'chat_private')
+	// ->where('created_at', '>=', date('Y-m-d'))
+	->orderBy('created_at', 'desc')
+	->with('contacto', 'grupo', 'miauthor')
+	->take(300)
+	->get();
+});
+
+// Route::post('/whatsapp/grupo', function (Request $request) {
+// 		return Evento::where("bot", $request->whatsapp)
+// 		->where('created_at', '>=', date('Y-m-d'))
+// 		->where('tipo', 'chat_group')
+// 		->orderBy('created_at', 'desc')
+// 		->with('contacto', 'grupo', 'miauthor')
+// 		->get();
+// });
+
+// Route::post('/whatsapp/grupo2', function (Request $request) {
+// 		return Evento::where("bot", $request->whatsapp)
+// 		->where('created_at', '>=', date('Y-m-d'))
+// 		->where('tipo', 'chat_multimedia')
+// 		->where('subtipo', 'chat_group')
+// 		->orderBy('created_at', 'desc')
+// 		->with('contacto', 'grupo', 'miauthor')
+// 		->get();
+// });
+
+
+// Route::post('/ai/mistral', function (Request $request) {
+// 	$data1 = [
+// 		'model' => 'mistral',
+// 		'prompt' => 'hola, quien eres ?',
+// 		'stream' => false,
+// 		'format' => 'json'
+// 	];
+	
+// 	$curl = curl_init();
+	
+// 	curl_setopt_array($curl, array(
+// 		CURLOPT_URL => "http://localhost:11434/api/generate",// your preferred url
+// 		CURLOPT_RETURNTRANSFER => true,
+// 		CURLOPT_ENCODING => "",
+// 		CURLOPT_MAXREDIRS => 10,
+// 		CURLOPT_TIMEOUT => 30000,
+// 		CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+// 		CURLOPT_CUSTOMREQUEST => "POST",
+// 		CURLOPT_POSTFIELDS => json_encode($data1),
+// 		CURLOPT_HTTPHEADER => array(
+// 			// Set here requred headers
+// 			"accept: */*",
+// 			"accept-language: en-US,en;q=0.8",
+// 			"content-type: application/json",
+// 		),
+// 	));
+
+// 	$response = curl_exec($curl);
+// 	$err = curl_error($curl);
+
+// 	curl_close($curl);
+
+// 	if ($err) {
+// 		return  "cURL Error #:" . $err;
+// 	} else {
+// 		return json_decode($response);
+// 	}
+// });
+
+
+/// download ---------------------
+Route::post('/socket/download/update', function (Request $request) {
+	$midata = Descarga::where('slug', $request->slug)->first();
+	$midata->file = $request->file;
+	$midata->send = $request->send;
+	$midata->size = $request->size;
+	$midata->save();
+	event(new MiEvent([
+		'tipo' => 'download'
+	]));
+	return true;
+});
+
+//template------------------------------
+// Route::post('/socket/template/update', function (Request $request) {
+// 	$midata = Plantilla::find($request->id);
+// 	$midata->send = $request->send;
+// 	$midata->size = $request->size;
+// 	$midata->save();
+// 	event(new MiEvent([
+// 		'tipo' => 'template'
+// 	]));
+// 	return true;
+// });
+
+
+//paneles----------------
+Route::post('/paneles/create', function (Request $request) {
+
+	$provee = Supplier::all();
+	foreach ($provee as $value) {
+		$mifind = Product::where("user_id", $request->user_id)->where("supplier_id", $value->id)->first();
+		if ($mifind) {
+			$mifind->name =  $value->name;
+			$mifind->price =  $value->price;
+			$mifind->image =  $value->image;
+			$mifind->save();
+		}else{	
+			Product::create([
+				'user_id' => $request->user_id,
+				'name' => $value->name,
+				'price' => $value->price,
+				'image' => $value->image,
+				'supplier_id' => $value->id,
+				'credit' => 0
+			]);
+		}
+	}
+	return true;
+});
